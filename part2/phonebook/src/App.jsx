@@ -1,47 +1,86 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import Filter from './components/Filter';
 import PersonForm from './components/PersonForm';
 import Persons from './components/Persons';
-
-const createIdGenerator = (persons) => {
-  let maxId = persons.reduce((max, person) => Math.max(max, person.id), 0);
-  return () => ++maxId;
-}
-
-let generateId;
+import personService from './services/persons';
 
 function App() {
-
   const [persons, setPersons] = useState([]);
   const [newName, setNewName] = useState('');
   const [newNumber, setNewNumber] = useState('');
   const [filterKey, setFilterKey] = useState('');
 
   useEffect(() => {
-    axios
-      .get('http://localhost:3001/persons')
-      .then(response => {
-        const persons = response.data;
-        generateId = createIdGenerator(persons);
-        setPersons(persons);
-      })
+    personService
+      .getAll()
+      .then(initialPersons => {
+        setPersons(initialPersons);
+      });
 
   }, []);
 
   const handleAddPerson = (e) => {
     e.preventDefault();
 
-    const hasDuplicate = persons.some(person => person.name === newName);
+    const duplicatePerson = persons.find(person => person.name === newName);
 
-    if (hasDuplicate) {
-      alert(`${newName} is already added to phonebook`);
-    } else {
-      setPersons([...persons, { name: newName, number: newNumber, id: generateId() }]);
-      setNewName('');
-      setNewNumber('');
+    if (!duplicatePerson) {
+      const newPerson = {
+        name: newName,
+        number: newNumber,
+      };
+
+      addPerson(newPerson);
+
+      return;
     }
 
+    const update = window.confirm(`${duplicatePerson.name} is already added to the phonebook, replace the old number with a new one?`);
+
+    if (update) {
+      const updatedPerson = {
+        ...duplicatePerson,
+        number: newNumber,
+      }
+
+      updatePerson(updatedPerson.id, updatedPerson);
+    }
+
+  }
+
+  const updatePerson = (id, updatedPerson) => {
+    personService
+      .update(id, updatedPerson)
+      .then(returnedPerson => {
+        setPersons(persons.map(person =>
+          person.id !== id ? person : returnedPerson
+        ));
+        setNewName('');
+        setNewNumber('');
+      });
+  }
+
+  const addPerson = (newPerson) => {
+    personService
+      .create(newPerson)
+      .then(returnedPerson => {
+        setPersons([...persons, returnedPerson]);
+        setNewName('');
+        setNewNumber('');
+      })
+  }
+
+  const deletePerson = (id) => {
+    personService
+      .remove(id)
+      .catch(error => {
+        console.log('The selected person has already been deleted from the server');
+      })
+      .finally(() => {
+        setPersons(persons.filter(person =>
+          person.id != id
+        ));
+      });
   }
 
   return (
@@ -62,7 +101,11 @@ function App() {
 
       <h2>Numbers</h2>
 
-      <Persons persons={persons} filterKey={filterKey} />
+      <Persons
+        persons={persons}
+        filterKey={filterKey}
+        deletePerson={deletePerson}
+      />
 
     </div>
   )
